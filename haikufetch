@@ -279,7 +279,7 @@ get_os() {
             # If the kernel version string ends in "-Microsoft",
             # we're very likely running under Windows 10 in WSL1.
             if [ "$WSLENV" ]; then
-                distro="${distro}${WSLENV+ on Windows 10 [WSL2]}"
+                distro="${distro}${WSLENV+ [WSL2]}"
 
             # Check to see if Linux is running in Windows 10 under
             # WSL2 (Windows subsystem for Linux [version 2]) and
@@ -289,7 +289,7 @@ get_os() {
             # appends the Windows 10 string even if '$WSLENV' is
             # empty. We only need to check that is has been _exported_.
             elif [ -z "${kernel%%*-Microsoft}" ]; then
-                distro="$distro on Windows 10 [WSL1]"
+                distro="$distro [WSL1]"
             fi
         ;;
 
