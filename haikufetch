@@ -1,8 +1,8 @@
 #!/bin/sh
 #
-# pfetch - Simple POSIX sh fetch script.
+# haikufetch - Simple POSIX sh fetch script forked from https://github.com/dylanaraps/pfetch.
 
-# Wrapper around all escape sequences used by pfetch to allow for
+# Wrapper around all escape sequences used by haikufetch to allow for
 # greater control over which sequences are used (if any at all).
 esc() {
     case $1 in
@@ -13,7 +13,7 @@ esc() {
 
         # text formatting
         SGR)
-            case ${PF_COLOR:=1} in
+            case ${HF_COLOR:=1} in
                 (1)
                     e="${esc_c}[${2}m"
                 ;;
@@ -57,7 +57,7 @@ has() {
 
 log() {
     # The 'log()' function handles the printing of information.
-    # In 'pfetch' (and 'neofetch'!) the printing of the ascii art and info
+    # In 'haikufetch' (and 'neofetch'!) the printing of the ascii art and info
     # happen independently of each other.
     #
     # The size of the ascii art is stored and the ascii is printed first.
@@ -134,23 +134,23 @@ log() {
     esc_p CUF "$ascii_width"
 
     # Print the info name and color the text.
-    esc_p SGR "3${PF_COL1-4}";
+    esc_p SGR "3${HF_COL1-4}";
     esc_p SGR 1
     printf '%s' "$name"
     esc_p SGR 0
 
     # Print the info name and info data separator, if applicable.
-    [ "$use_seperator" ] || printf %s "$PF_SEP"
+    [ "$use_seperator" ] || printf %s "$HF_SEP"
 
     # Move the cursor backward the length of the *current* info name and
     # then move it forwards the length of the *longest* info name. This
     # aligns each info data line.
     esc_p CUB "${#name}"
-    esc_p CUF "${PF_ALIGN:-$info_length}"
+    esc_p CUF "${HF_ALIGN:-$info_length}"
 
     # Print the info data, color it and strip all leading whitespace
     # from the string.
-    esc_p SGR "3${PF_COL2-9}"
+    esc_p SGR "3${HF_COL2-9}"
     printf '%s' "$info"
     esc_p SGR 0
     printf '\n'
@@ -181,13 +181,13 @@ get_title() {
     # them directly in the arguments passed to log(), we cannot use esc_p().
     esc SGR 1
     user=$e$user
-    esc SGR "3${PF_COL3:-1}"
+    esc SGR "3${HF_COL3:-1}"
     user=$e$user
     esc SGR 1
     user=$user$e
     esc SGR 1
     hostname=$e$hostname
-    esc SGR "3${PF_COL3:-1}"
+    esc SGR "3${HF_COL3:-1}"
     hostname=$e$hostname
 
     log "${user}@${hostname}" " " " " >&6
@@ -219,7 +219,7 @@ get_os() {
             # lsb-release package.
             #
             # This causes users to think there's a bug in system detection
-            # tools like neofetch or pfetch when they technically *do*
+            # tools like neofetch or haikufetch when they technically *do*
             # function correctly.
             #
             # Exceptions are made for distributions which are independent,
@@ -987,7 +987,7 @@ get_wm() {
             # environments sadly. It'd be nice if some kind of standard were
             # established to identify Wayland environments.
             #
-            # pfetch's goal is to remain _simple_, if you'd like a "full"
+            # haikufetch's goal is to remain _simple_, if you'd like a "full"
             # implementation of window manager detection use 'neofetch'.
             #
             # Neofetch use a combination of 'xprop' and 'ps' parsing to
@@ -1110,10 +1110,10 @@ get_ascii() {
     # This function also sets the text colors according
     # to the ascii color.
     read_ascii() {
-        # 'PF_COL1': Set the info name color according to ascii color.
-        # 'PF_COL3': Set the title color to some other color. ¯\_(ツ)_/¯
-        PF_COL1=${PF_COL1:-${1:-7}}
-        PF_COL3=${PF_COL3:-$((${1:-7}%8+1))}
+        # 'HF_COL1': Set the info name color according to ascii color.
+        # 'HF_COL3': Set the title color to some other color. ¯\_(ツ)_/¯
+        HF_COL1=${HF_COL1:-${1:-7}}
+        HF_COL3=${HF_COL3:-$((${1:-7}%8+1))}
 
         # POSIX sh has no 'var+=' so 'var=${var}append' is used. What's
         # interesting is that 'var+=' _is_ supported inside '$(())'
@@ -1130,7 +1130,7 @@ get_ascii() {
 
     # This checks for ascii art in the following order:
     # '$1':        Argument given to 'get_ascii()' directly.
-    # '$PF_ASCII': Environment variable set by user.
+    # '$HF_ASCII': Environment variable set by user.
     # '$distro':   The detected distribution name.
     # '$os':       The name of the operating system/kernel.
     #
@@ -1140,7 +1140,7 @@ get_ascii() {
     #
     # False positive.
     # shellcheck disable=2154
-    case ${1:-${PF_ASCII:-${distro:-$os}}} in
+    case ${1:-${HF_ASCII:-${distro:-$os}}} in
         ([Aa]lpine*)
             read_ascii 4 <<-EOF
 				${c4}   /\\ /\\
@@ -1843,7 +1843,7 @@ get_ascii() {
 main() {
     case $* in
         -v)
-            printf '%s 0.7.0\n' "${0##*/}"
+            printf '%s 0.1.0\n' "${0##*/}"
             return 0
         ;;
 
@@ -1873,9 +1873,9 @@ EOF
     esc_c=$(printf '\033')
 
     # Allow the user to execute their own script and modify or
-    # extend pfetch's behavior.
+    # extend haikufetch's behavior.
     # shellcheck source=/dev/null
-    ! [ -f "$PF_SOURCE" ] || . "$PF_SOURCE"
+    ! [ -f "$HF_SOURCE" ] || . "$HF_SOURCE"
 
     # Ensure that the 'TMPDIR' is writable as heredocs use it and
     # fail without the write permission. This was found to be the
@@ -1908,13 +1908,13 @@ EOF
     get_os
 
     # Allow the user to specify the order and inclusion of information
-    # functions through the 'PF_INFO' environment variable.
+    # functions through the 'HF_INFO' environment variable.
     # shellcheck disable=2086
     {
         # Disable globbing and set the positional parameters to the
-        # contents of 'PF_INFO'.
+        # contents of 'HF_INFO'.
         set -f
-        set +f -- ${PF_INFO-ascii title os host kernel uptime pkgs memory}
+        set +f -- ${HF_INFO-ascii title os host kernel uptime pkgs memory}
 
         # Iterate over the info functions to determine the lengths of the
         # "info names" for output alignment. The option names and subtitles
