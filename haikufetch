@@ -947,6 +947,7 @@ get_wm() {
         ;;
 
         (*)
+            # an explanation of this function by [dylanaraps](https://github.com/dylanaraps/).
             # xprop can be used to grab the window manager's properties
             # which contains the window manager's name under '_NET_WM_NAME'.
             #
