@@ -1069,7 +1069,9 @@ get_de() {
 
 get_shell() {
     # Display the basename of the '$SHELL' environment variable.
-    log shell "${SHELL##*/}" >&6
+    shll="${SHELL##*/}"
+    if [ "$HF_PRINT_SHELL_PATH" = "true" ]; then shll="${SHELL}"; fi
+    log shell "${shll}" >&6
 }
 
 get_editor() {
