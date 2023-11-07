@@ -1,0 +1,252 @@
+#!/bin/sh
+
+get_memory() {
+    case $os in
+        # Used memory is calculated using the following "formula":
+        # MemUsed = MemTotal + Shmem - MemFree - Buffers - Cached - SReclaimable
+        # Source: https://github.com/KittyKatt/screenFetch/issues/386
+        (Linux*)
+            # Parse the '/proc/meminfo' file splitting on ':' and 'k'.
+            # The format of the file is 'key:   000kB' and an additional
+            # split is used on 'k' to filter out 'kB'.
+            while IFS=':k '  read -r key val _; do
+                case $key in
+                    (MemTotal)
+                        mem_used=$((mem_used + val))
+                        mem_full=$val
+                    ;;
+
+                    (Shmem)
+                        mem_used=$((mem_used + val))
+                    ;;
+
+                    (MemFree | Buffers | Cached | SReclaimable)
+                        mem_used=$((mem_used - val))
+                    ;;
+
+                    # If detected this will be used over the above calculation
+                    # for mem_used. Available since Linux 3.14rc.
+                    # See kernel commit 34e431b0ae398fc54ea69ff85ec700722c9da773
+                    (MemAvailable)
+                        mem_avail=$val
+                    ;;
+                esac
+            done < /proc/meminfo
+
+            case $mem_avail in
+                (*[0-9]*)
+                    mem_used=$(((mem_full - mem_avail) / 1024))
+                ;;
+
+                *)
+                    mem_used=$((mem_used / 1024))
+                ;;
+            esac
+
+            mem_full=$((mem_full / 1024))
+        ;;
+
+        # Used memory is calculated using the following "formula":
+        # (wired + active + occupied) * 4 / 1024
+        (Darwin*)
+            mem_full=$(($(sysctl -n hw.memsize) / 1024 / 1024))
+
+            # Parse the 'vmstat' file splitting on ':' and '.'.
+            # The format of the file is 'key:   000.' and an additional
+            # split is used on '.' to filter it out.
+            while IFS=:. read -r key val; do
+                case $key in
+                    (*' wired'*|*' active'*|*' occupied'*)
+                        mem_used=$((mem_used + ${val:-0}))
+                    ;;
+                esac
+
+            # Using '<<-EOF' is the only way to loop over a command's
+            # output without the use of a pipe ('|').
+            # This ensures that any variables defined in the while loop
+            # are still accessible in the script.
+            done <<-EOF
+                $(vm_stat)
+			EOF
+
+            mem_used=$((mem_used * 4 / 1024))
+        ;;
+
+        (OpenBSD*)
+            mem_full=$(($(sysctl -n hw.physmem) / 1024 / 1024))
+
+            # This is a really simpler parser for 'vmstat' which grabs
+            # the used memory amount in a lazy way. 'vmstat' prints 3
+            # lines of output with the needed value being stored in the
+            # final line.
+            #
+            # This loop simply grabs the 3rd element of each line until
+            # the EOF is reached. Each line overwrites the value of the
+            # previous one so we're left with what we wanted. This isn't
+            # slow as only 3 lines are parsed.
+            while read -r _ _ line _; do
+                mem_used=${line%%M}
+
+            # Using '<<-EOF' is the only way to loop over a command's
+            # output without the use of a pipe ('|').
+            # This ensures that any variables defined in the while loop
+            # are still accessible in the script.
+            done <<-EOF
+                $(vmstat)
+			EOF
+        ;;
+
+        # Used memory is calculated using the following "formula":
+        # mem_full - ((inactive + free + cache) * page_size / 1024)
+        (FreeBSD*|DragonFly*)
+            mem_full=$(($(sysctl -n hw.physmem) / 1024 / 1024))
+
+            # Use 'set --' to store the output of the command in the
+            # argument list. POSIX sh has no arrays but this is close enough.
+            #
+            # Disable the shellcheck warning for word-splitting
+            # as it's safe and intended ('set -f' disables globbing).
+            # shellcheck disable=2046
+            {
+                set -f
+                set +f -- $(sysctl -n hw.pagesize \
+                                      vm.stats.vm.v_inactive_count \
+                                      vm.stats.vm.v_free_count \
+                                      vm.stats.vm.v_cache_count)
+            }
+
+            # Calculate the amount of used memory.
+            # $1: hw.pagesize
+            # $2: vm.stats.vm.v_inactive_count
+            # $3: vm.stats.vm.v_free_count
+            # $4: vm.stats.vm.v_cache_count
+            mem_used=$((mem_full - (($2 + $3 + $4) * $1 / 1024 / 1024)))
+        ;;
+
+        (NetBSD*)
+            mem_full=$(($(sysctl -n hw.physmem64) / 1024 / 1024))
+
+            # NetBSD implements a lot of the Linux '/proc' filesystem,
+            # this uses the same parser as the Linux memory detection.
+            while IFS=':k ' read -r key val _; do
+                case $key in
+                    (MemFree)
+                        mem_free=$((val / 1024))
+                        break
+                    ;;
+                esac
+            done < /proc/meminfo
+
+            mem_used=$((mem_full - mem_free))
+        ;;
+
+        (Haiku)
+            # Read the first line of 'sysinfo -mem' splitting on
+            # '(', ' ', and ')'. The needed information is then
+            # stored in the 5th and 7th elements. Using '_' "consumes"
+            # an element allowing us to proceed to the next one.
+            #
+            # The parsed format is as follows:
+            # 3501142016 bytes free      (used/max  792645632 / 4293787648)
+            IFS='( )' read -r _ _ _ _ mem_used _ mem_full <<-EOF
+                $(sysinfo -mem)
+			EOF
+
+            mem_used=$((mem_used / 1024 / 1024))
+            mem_full=$((mem_full / 1024 / 1024))
+        ;;
+
+        (Minix)
+            # Minix includes the '/proc' filesystem though the format
+            # differs from Linux. The '/proc/meminfo' file is only a
+            # single line with space separated elements and elements
+            # 2 and 3 contain the total and free memory numbers.
+            read -r _ mem_full mem_free _ < /proc/meminfo
+
+            mem_used=$(((mem_full - mem_free) / 1024))
+            mem_full=$(( mem_full / 1024))
+        ;;
+
+        (SunOS)
+            hw_pagesize=$(pagesize)
+
+            # 'kstat' outputs memory in the following format:
+            # unix:0:system_pages:pagestotal	1046397
+            # unix:0:system_pages:pagesfree		885018
+            #
+            # This simply uses the first "element" (white-space
+            # separated) as the key and the second element as the
+            # value.
+            #
+            # A variable is then assigned based on the key.
+            while read -r key val; do
+                case $key in
+                    (*total)
+                        pages_full=$val
+                    ;;
+
+                    (*free)
+                        pages_free=$val
+                    ;;
+                esac
+            done <<-EOF
+				$(kstat -p unix:0:system_pages:pagestotal \
+                           unix:0:system_pages:pagesfree)
+			EOF
+
+            mem_full=$((pages_full * hw_pagesize / 1024 / 1024))
+            mem_free=$((pages_free * hw_pagesize / 1024 / 1024))
+            mem_used=$((mem_full - mem_free))
+        ;;
+
+        (IRIX)
+            # Read the memory information from the 'top' command. Parse
+            # and split each line until we reach the line starting with
+            # "Memory".
+            #
+            # Example output: Memory: 160M max, 147M avail, .....
+            while IFS=' :' read -r label mem_full _ mem_free _; do
+                case $label in
+                    (Memory)
+                        mem_full=${mem_full%M}
+                        mem_free=${mem_free%M}
+                        break
+                    ;;
+                esac
+            done <<-EOF
+                $(top -n)
+			EOF
+
+            mem_used=$((mem_full - mem_free))
+        ;;
+
+        (SerenityOS)
+            IFS='{}' read -r _ memstat _ < /proc/memstat
+
+            set -f -- "$IFS"
+            IFS=,
+
+            for pair in $memstat; do
+                case $pair in
+                    (*user_physical_allocated*)
+                        mem_used=${pair##*:}
+                    ;;
+
+                    (*user_physical_available*)
+                        mem_free=${pair##*:}
+                    ;;
+                esac
+            done
+
+            IFS=$1
+            set +f --
+
+            mem_used=$((mem_used * 4096 / 1024 / 1024))
+            mem_free=$((mem_free * 4096 / 1024 / 1024))
+
+            mem_full=$((mem_used + mem_free))
+        ;;
+    esac
+
+    log memory "${mem_used:-?}M / ${mem_full:-?}M" >&6
+}

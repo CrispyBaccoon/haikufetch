@@ -1,0 +1,40 @@
+#!/bin/sh
+
+get_shell() {
+    # Display the basename of the '$SHELL' environment variable.
+    [ -n "$SHELL" ] || SHELL=$(grep "^$USER" /etc/passwd | grep -oE '(/\w*)+$')
+    shll="${SHELL##*/}"
+    if [ "$HF_PRINT_SHELL_PATH" = "true" ]; then shll="${SHELL}"; fi
+    log shell "${shll}" >&6
+}
+
+get_editor() {
+    # Display the value of '$VISUAL', if it's empty, display the
+    # value of '$EDITOR'.
+    editor=${VISUAL:-"$EDITOR"}
+
+    log editor "${editor##*/}" >&6
+}
+
+get_palette() {
+    # Print the first 8 terminal colors. This uses the existing
+    # sequences to change text color with a sequence prepended
+    # to reverse the foreground and background colors.
+    #
+    # This allows us to save hardcoding a second set of sequences
+    # for background colors.
+    #
+    # False positive.
+    # shellcheck disable=2154
+    {
+        esc SGR 7
+        palette="$e$c1 $c1 $c2 $c2 $c3 $c3 $c4 $c4 $c5 $c5 $c6 $c6 "
+        esc SGR 0
+        palette="$palette$e"
+    }
+
+    # Print the palette with a new-line before and afterwards but no seperator.
+    printf '\n' >&6
+    log "$palette
+        " " " " " >&6
+}

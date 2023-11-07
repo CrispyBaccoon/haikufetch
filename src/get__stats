@@ -1,0 +1,210 @@
+#!/bin/sh
+
+get_uptime() {
+    # Uptime works by retrieving the data in total seconds and then
+    # converting that data into days, hours and minutes using simple
+    # math.
+    case $os in
+        (Linux* | Minix* | SerenityOS*)
+            IFS=. read -r s _ < /proc/uptime
+        ;;
+
+        (Darwin* | *BSD* | DragonFly*)
+            s=$(sysctl -n kern.boottime)
+
+            # Extract the uptime in seconds from the following output:
+            # [...] { sec = 1271934886, usec = 667779 } Thu Apr 22 12:14:46 2010
+            s=${s#*=}
+            s=${s%,*}
+
+            # The uptime format from 'sysctl' needs to be subtracted from
+            # the current time in seconds.
+            s=$(($(date +%s) - s))
+        ;;
+
+        (Haiku)
+            # The boot time is returned in microseconds, convert it to
+            # regular seconds.
+            s=$(($(system_time) / 1000000))
+        ;;
+
+        (SunOS)
+            # Split the output of 'kstat' on '.' and any white-space
+            # which exists in the command output.
+            #
+            # The output is as follows:
+            # unix:0:system_misc:snaptime	14809.906993005
+            #
+            # The parser extracts:          ^^^^^
+            IFS='	.' read -r _ s _ <<-EOF
+				$(kstat -p unix:0:system_misc:snaptime)
+			EOF
+        ;;
+
+        (IRIX)
+            # Grab the uptime in a pretty format. Usually,
+            # 00:00:00 from the 'ps' command.
+            t=$(LC_ALL=POSIX ps -o etime= -p 1)
+
+            # Split the pretty output into days or hours
+            # based on the uptime.
+            case $t in
+                (*-*)   d=${t%%-*} t=${t#*-} ;;
+                (*:*:*) h=${t%%:*} t=${t#*:} ;;
+            esac
+
+            h=${h#0} t=${t#0}
+
+            # Convert the split pretty fields back into
+            # seconds so we may re-convert them to our format.
+            s=$((${d:-0}*86400 + ${h:-0}*3600 + ${t%%:*}*60 + ${t#*:}))
+        ;;
+    esac
+
+    # Convert the uptime from seconds into days, hours and minutes.
+    d=$((s / 60 / 60 / 24))
+    h=$((s / 60 / 60 % 24))
+    m=$((s / 60 % 60))
+
+    # Only append days, hours and minutes if they're non-zero.
+    case "$d" in ([!0]*) uptime="${uptime}${d}d "; esac
+    case "$h" in ([!0]*) uptime="${uptime}${h}h "; esac
+    case "$m" in ([!0]*) uptime="${uptime}${m}m "; esac
+
+    log uptime "${uptime:-0m}" >&6
+}
+
+get_pkgs() {
+    # This works by first checking for which package managers are
+    # installed and finally by printing each package manager's
+    # package list with each package one per line.
+    #
+    # The output from this is then piped to 'wc -l' to count each
+    # line, giving us the total package count of whatever package
+    # managers are installed.
+    packages=$(
+        case $os in
+            (Linux*)
+                # Commands which print packages one per line.
+                has bonsai     && bonsai list
+                has crux       && pkginfo -i
+                has pacman-key && pacman -Qq
+                has dpkg       && dpkg-query -f '.\n' -W
+                has rpm        && rpm -qa
+                has xbps-query && xbps-query -l
+                has apk        && apk info
+                has guix       && guix package --list-installed
+                has opkg       && opkg list-installed
+
+                # Directories containing packages.
+                has kiss       && printf '%s\n' /var/db/kiss/installed/*/
+                has cpt-list   && printf '%s\n' /var/db/cpt/installed/*/
+                has brew       && printf '%s\n' "$(brew --cellar)/"*
+                has emerge     && printf '%s\n' /var/db/pkg/*/*/
+                has pkgtool    && printf '%s\n' /var/log/packages/*
+                has eopkg      && printf '%s\n' /var/lib/eopkg/package/*
+
+                # 'nix' requires two commands.
+                has nix-store  && {
+                    nix-store -q --requisites /run/current-system/sw
+                    nix-store -q --requisites ~/.nix-profile
+                }
+            ;;
+
+            (Darwin*)
+                # Commands which print packages one per line.
+                has pkgin      && pkgin list
+                has dpkg       && dpkg-query -f '.\n' -W
+
+                # Directories containing packages.
+                has brew       && printf '%s\n' /usr/local/Cellar/*
+
+                # 'port' prints a single line of output to 'stdout'
+                # when no packages are installed and exits with
+                # success causing a false-positive of 1 package
+                # installed.
+                #
+                # 'port' should really exit with a non-zero code
+                # in this case to allow scripts to cleanly handle
+                # this behavior.
+                has port       && {
+                    pkg_list=$(port installed)
+
+                    case "$pkg_list" in
+                        ("No ports are installed.")
+                            # do nothing
+                        ;;
+
+                        (*)
+                            printf '%s\n' "$pkg_list"
+                        ;;
+                    esac
+                }
+            ;;
+
+            (FreeBSD*|DragonFly*)
+                pkg info
+            ;;
+
+            (OpenBSD*)
+                printf '%s\n' /var/db/pkg/*/
+            ;;
+
+            (NetBSD*)
+                pkg_info
+            ;;
+
+            (Haiku)
+                printf '%s\n' /boot/system/package-links/*
+            ;;
+
+            (Minix)
+                printf '%s\n' /usr/pkg/var/db/pkg/*/
+            ;;
+
+            (SunOS)
+                has pkginfo && pkginfo -i
+                has pkg     && pkg list
+            ;;
+
+            (IRIX)
+                versions -b
+            ;;
+
+            (SerenityOS)
+                while IFS=" " read -r type _; do
+                    [ "$type" != dependency ] &&
+                        printf "\n"
+                done < /usr/Ports/packages.db
+            ;;
+        esac | wc -l
+    )
+
+    # 'wc -l' can have leading and/or trailing whitespace
+    # depending on the implementation, so strip them.
+    # Procedure explained at https://github.com/dylanaraps/pure-sh-bible
+    # (trim-leading-and-trailing-white-space-from-string)
+    packages=${packages#"${packages%%[![:space:]]*}"}
+    packages=${packages%"${packages##*[![:space:]]}"}
+
+    case $os in
+        # IRIX's package manager adds 3 lines of extra
+        # output which we must account for here.
+        (IRIX)
+            packages=$((packages - 3))
+        ;;
+
+        # OpenBSD's wc prints whitespace before the output
+        # which needs to be stripped.
+        (OpenBSD)
+            packages=$((packages))
+        ;;
+    esac
+
+    case $packages in
+        (1?*|[2-9]*)
+            log pkgs "$packages" >&6
+        ;;
+    esac
+}
+
