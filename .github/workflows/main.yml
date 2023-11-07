@@ -7,5 +7,6 @@ jobs:
     - uses: actions/checkout@v1
     - name: Run shellcheck.
       run: |
+        make clean all
         shellcheck haikufetch
         TERM=dumb sh haikufetch
