@@ -7,5 +7,5 @@ jobs:
     - uses: actions/checkout@v1
     - name: Run shellcheck.
       run: |
-        shellcheck pfetch
-        TERM=dumb sh pfetch
+        shellcheck haikufetch
+        TERM=dumb sh haikufetch
