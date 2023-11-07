@@ -1071,6 +1071,7 @@ get_de() {
 
 get_shell() {
     # Display the basename of the '$SHELL' environment variable.
+    [ -n "$SHELL" ] || SHELL=$(grep "^$USER" /etc/passwd | grep -oE '(/\w*)+$')
     shll="${SHELL##*/}"
     if [ "$HF_PRINT_SHELL_PATH" = "true" ]; then shll="${SHELL}"; fi
     log shell "${shll}" >&6
