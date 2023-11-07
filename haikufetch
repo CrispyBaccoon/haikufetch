@@ -190,7 +190,9 @@ get_title() {
     esc SGR "3${HF_COL3:-1}"
     hostname=$e$hostname
 
-    log "${user}@${hostname}" " " " " >&6
+    separator="${HF_SEPARATOR:-@}"
+
+    log "${user}${separator}${hostname}" " " " " >&6
 }
 
 get_os() {
