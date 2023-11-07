@@ -1,0 +1,6 @@
+pkg:  haikufetch
+url:  github.com/crispybaccoon/haikufetch
+desc: A pretty system information tool written in POSIX sh
+
+install:
+  - make prefix=$(hayashi --prefix) install
